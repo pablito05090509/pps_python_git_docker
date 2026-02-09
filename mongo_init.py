@@ -1,30 +1,29 @@
-from pymongo import MongoClient
-import random
+import time
+from pymongo import MongoClient, errors
 
-def get_collection():
-    client = MongoClient("mongodb://mongo_db:27017/")
-    db = client.bayeta_db
-    return db.frases
+def get_db():
+    client = MongoClient("mongodb://mongo_db:27017/", serverSelectionTimeoutMS=5000)
+    return client.bayeta_db
 
-def init_frases():
-    frases = [
-        {"frase": "La fortuna sonríe a los valientes"},
-        {"frase": "Hoy es un buen día para aprender algo nuevo"},
-        {"frase": "La paciencia trae recompensas"},
-        {"frase": "Tu esfuerzo dará frutos pronto"},
-        {"frase": "Sonríe y el mundo sonreirá contigo"}
-    ]
-    col = get_collection()
-    col.delete_many({})  # Borra lo que haya para no duplicar
-    col.insert_many(frases)
-    print("MongoDB inicializado con frases")
+def init_frases(retries=10, delay=2):
+    """Espera a que MongoDB esté listo y luego inserta las frases iniciales"""
+    db = None
+    for i in range(retries):
+        try:
+            db = get_db()
+            db.command("ping")  # Verifica que MongoDB responde
+            break
+        except errors.ServerSelectionTimeoutError:
+            print(f"[mongo_init] MongoDB no listo, reintentando en {delay} segundos...")
+            time.sleep(delay)
+    else:
+        raise Exception("No se pudo conectar a MongoDB")
 
-def get_frases(n):
-    col = get_collection()
-    all_frases = list(col.find({}))
-    if not all_frases:
-        return ["No hay frases disponibles"]
-    return [random.choice(all_frases)["frase"] for _ in range(n)]
-
-if __name__ == "__main__":
-    init_frases()
+    coleccion = db.frases
+    if coleccion.count_documents({}) == 0:
+        coleccion.insert_many([
+            {"frase": "La fortuna sonríe a los valientes"},
+            {"frase": "La paciencia trae recompensas"},
+            {"frase": "Sonríe y el mundo sonreirá contigo"}
+        ])
+        print("[mongo_init] MongoDB inicializado con frases")
